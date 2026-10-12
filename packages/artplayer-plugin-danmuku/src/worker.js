@@ -17,6 +17,39 @@ function getDanmuTop({ target, visibles, clientWidth, clientHeight, marginBottom
     }
   }
 
+  if (antiOverlap && target.mode === 0) {
+    const candidates = [...new Set([
+      marginTop,
+      ...danmus.map(danmu => danmu.top + danmu.height),
+    ])].sort((prev, next) => prev - next)
+
+    for (const top of candidates) {
+      if (top < marginTop || top + target.height > maxTop)
+        continue
+
+      const hasCollision = danmus.some((danmu) => {
+        const overlapsVertically = top < danmu.top + danmu.height
+          && top + target.height > danmu.top
+        if (!overlapsVertically)
+          return false
+        // 前后弹幕之间至少保留的水平间距
+        const gap = Math.max(target.height * 2, clientWidth * 0.05)
+        if (danmu.right < gap)
+          return true
+        if (target.speed <= danmu.speed)
+          return false
+
+        const overlapTime = (danmu.right - gap) / (target.speed - danmu.speed)
+        return overlapTime <= danmu.time
+      })
+
+      if (!hasCollision)
+        return top
+    }
+
+    return undefined
+  }
+
   // 上下各加一个虚拟弹幕，方便计算
   danmus.unshift({
     type: 'top',
@@ -85,23 +118,6 @@ function getDanmuTop({ target, visibles, clientWidth, clientHeight, marginBottom
 
   if (antiOverlap) {
     switch (target.mode) {
-      case 0: {
-        const result = topMap.find((list) => {
-          return list.every((danmu) => {
-            if (clientWidth < danmu.distance)
-              return false
-            if (target.speed < danmu.speed)
-              return true
-            const overlapTime = danmu.right / (target.speed - danmu.speed)
-            if (overlapTime > danmu.time)
-              return true
-            return false
-          })
-        })
-
-        return result && result[0] ? result[0].top : undefined
-      }
-
       // 静止弹幕没有重叠问题
       case 1:
       case 2:

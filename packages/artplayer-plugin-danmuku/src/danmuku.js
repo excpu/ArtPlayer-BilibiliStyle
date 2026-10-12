@@ -1,6 +1,21 @@
 import { bilibiliDanmuParseFromUrl } from './bilibili'
 import DanmuWorker from './worker.js?worker&inline'
 
+// 各档位的时长倍率，倍率越小越快
+const DANMU_SPEED = {
+  fast: 0.7,
+  normal: 1,
+  slow: 1.4,
+}
+
+// 弹幕横穿屏幕的基准时长：小窗口约 8 秒，全屏约 13 秒，中间按宽度线性过渡
+const DURATION_MIN = { width: 640, seconds: 7 }
+const DURATION_MAX = { width: 1920, seconds: 13 }
+
+// 浏览器无法获取显示器真实 DPI，但 CSS 像素已按系统缩放(devicePixelRatio)归一化；
+// 这里限制 CSS 像素/秒的上下限，避免超宽或高缩放显示器上弹幕过快而难以阅读
+const SPEED_LIMIT = { min: 70, max: 165 }
+
 export default class Danmuku {
   constructor(art, option) {
     const { constructor, template } = art
@@ -53,7 +68,7 @@ export default class Danmuku {
   static get option() {
     return {
       danmuku: [], // 弹幕数据
-      speed: 5, // 弹幕持续时间，范围在[1 ~ 10]
+      speed: 'normal', // 弹幕速度: fast, normal, slow
       margin: [10, '25%'], // 弹幕上下边距，支持像素数字和百分比
       opacity: 1, // 弹幕透明度，范围在[0 ~ 1]
       color: '#FFFFFF', // 默认弹幕颜色，可以被单独弹幕项覆盖
@@ -86,7 +101,7 @@ export default class Danmuku {
   static get scheme() {
     return {
       danmuku: 'array|function|string',
-      speed: 'number',
+      speed: 'string',
       margin: 'array',
       opacity: 'number',
       color: 'string',
@@ -254,11 +269,29 @@ export default class Danmuku {
     return result
   }
 
-  // 计算弹幕速度
+  // 按播放器宽度计算速度，保持不同尺寸和分辨率下的相对速度一致
   get speed() {
+    const { clamp } = this.utils
+    const width = Math.max(this.$player.clientWidth, 1)
+    const ratio = clamp(
+      (width - DURATION_MIN.width) / (DURATION_MAX.width - DURATION_MIN.width),
+      0,
+      1,
+    )
+    const seconds = DURATION_MIN.seconds + (DURATION_MAX.seconds - DURATION_MIN.seconds) * ratio
+    const level = DANMU_SPEED[this.option.speed]
+    const speed = clamp(width / (seconds * level), SPEED_LIMIT.min / level, SPEED_LIMIT.max / level)
     return this.option.synchronousPlayback && this.art.playbackRate
-      ? this.option.speed / Number(this.art.playbackRate)
-      : this.option.speed
+      ? speed * Number(this.art.playbackRate)
+      : speed
+  }
+
+  // 顶部和底部弹幕不滚动，仍按速度档位调整停留时间
+  get duration() {
+    const duration = 5 * DANMU_SPEED[this.option.speed]
+    return this.option.synchronousPlayback && this.art.playbackRate
+      ? duration / Number(this.art.playbackRate)
+      : duration
   }
 
   // 加载弹幕
@@ -385,7 +418,7 @@ export default class Danmuku {
 
   // 动态配置
   config(option, isInit = false) {
-    const { clamp } = this.utils
+    const { clamp, errorHandle } = this.utils
     const { $controlsCenter } = this.art.template
 
     // 判断配置项是否有变化
@@ -402,7 +435,10 @@ export default class Danmuku {
     this.validator(this.option, Danmuku.scheme)
 
     this.option.mode = clamp(this.option.mode, 0, 2)
-    this.option.speed = clamp(this.option.speed, 1, 10)
+    errorHandle(
+      Object.prototype.hasOwnProperty.call(DANMU_SPEED, this.option.speed),
+      'Danmuku speed must be "fast", "normal", or "slow"',
+    )
     this.option.opacity = clamp(this.option.opacity, 0, 1)
     this.option.lockTime = clamp(this.option.lockTime, 1, 60)
     this.option.maxLength = clamp(this.option.maxLength, 1, 1000)
@@ -534,11 +570,11 @@ export default class Danmuku {
             // 记录弹幕时间戳
             danmu.$lastStartTime = Date.now()
 
-            // 计算弹幕剩余时间
-            danmu.$restTime = this.speed
-
             // 计算弹幕滚动的距离
             const distance = clientWidth + danmu.$ref.clientWidth
+
+            // 按实际滚动距离计算时长，避免播放器宽度影响视觉速度
+            danmu.$restTime = danmu.mode === 0 ? distance / this.speed : this.duration
 
             // 计算弹幕的top值
             const { result: top } = await this.postMessage({
@@ -546,7 +582,7 @@ export default class Danmuku {
               target: {
                 mode: danmu.mode,
                 height: danmu.$ref.clientHeight,
-                speed: distance / danmu.$restTime,
+                speed: this.speed,
               }, // 当前弹幕信息
               visibles: this.visibles, // 可见的弹幕的数据
               antiOverlap: this.option.antiOverlap,
@@ -606,52 +642,46 @@ export default class Danmuku {
 
   // 重置正在显示的弹幕: stop/emit 状态的弹幕
   resize() {
-    const { clientWidth } = this.$player
-
+    // 已在屏幕上的弹幕保持当前位置，并按新的速度继续滚动
     this.filter('stop', (danmu) => {
-      switch (danmu.mode) {
-        // 滚动的弹幕
-        case 0:
-          danmu.$ref.style.left = `${clientWidth}px`
-          break
-        default:
-          break
+      if (danmu.mode === 0) {
+        this.freeze(danmu)
       }
     })
 
     this.filter('emit', (danmu) => {
       danmu.$lastStartTime = Date.now()
-      switch (danmu.mode) {
-        // 滚动的弹幕
-        case 0: {
-          const distance = clientWidth + danmu.$ref.clientWidth
-          danmu.$ref.style.left = `${clientWidth}px`
-          danmu.$ref.style.transform = `translateX(${-distance}px)`
-          danmu.$ref.style.transition = `transform ${danmu.$restTime}s linear 0s`
-          break
-        }
-        default:
-          break
+      if (danmu.mode === 0) {
+        this.freeze(danmu)
+        this.roll(danmu)
       }
     })
   }
 
+  // 把滚动弹幕固定在当前的视觉位置
+  freeze(danmu) {
+    const left = this.getLeft(danmu.$ref) - this.getLeft(this.$player)
+    danmu.$ref.style.transition = 'transform 0s linear 0s'
+    danmu.$ref.style.transform = 'translateX(0px)'
+    danmu.$ref.style.left = `${left}px`
+  }
+
+  // 从当前位置按当前速度滚出屏幕
+  roll(danmu) {
+    const distance = Number.parseFloat(danmu.$ref.style.left) + danmu.$ref.clientWidth
+    danmu.$restTime = Math.max(distance / this.speed, 0.01)
+    void danmu.$ref.offsetWidth // 强制重排，使位置固定后再开始过渡
+    danmu.$ref.style.transform = `translateX(${-distance}px)`
+    danmu.$ref.style.transition = `transform ${danmu.$restTime}s linear 0s`
+  }
+
   // 继续弹幕
   continue() {
-    const { clientWidth } = this.$player
     this.filter('stop', (danmu) => {
       this.setState(danmu, 'emit') // 转换为emit状态
       danmu.$lastStartTime = Date.now()
-      switch (danmu.mode) {
-        // 继续滚动的弹幕
-        case 0: {
-          const distance = clientWidth + danmu.$ref.clientWidth
-          danmu.$ref.style.transform = `translateX(${-distance}px)`
-          danmu.$ref.style.transition = `transform ${danmu.$restTime}s linear 0s`
-          break
-        }
-        default:
-          break
+      if (danmu.mode === 0) {
+        this.roll(danmu)
       }
     })
 
@@ -660,19 +690,10 @@ export default class Danmuku {
 
   // 暂停弹幕
   suspend() {
-    const { clientWidth } = this.$player
     this.filter('emit', (danmu) => {
       this.setState(danmu, 'stop') // 转换为stop状态
-      switch (danmu.mode) {
-        // 停止滚动的弹幕
-        case 0: {
-          const translateX = clientWidth - (this.getLeft(danmu.$ref) - this.getLeft(this.$player))
-          danmu.$ref.style.transform = `translateX(${-translateX}px)`
-          danmu.$ref.style.transition = 'transform 0s linear 0s'
-          break
-        }
-        default:
-          break
+      if (danmu.mode === 0) {
+        this.freeze(danmu)
       }
     })
 

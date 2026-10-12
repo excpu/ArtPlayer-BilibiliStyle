@@ -56,9 +56,9 @@ export interface Option {
   danmuku: Danmuku
 
   /**
-   * 弹幕持续时间，范围在[1 ~ 10]
+   * 弹幕速度：快速、正常、慢速；滚动速度会根据播放器宽度自适应
    */
-  speed?: number
+  speed?: 'fast' | 'normal' | 'slow'
 
   /**
    * 弹幕上下边距，支持像素数字和百分比

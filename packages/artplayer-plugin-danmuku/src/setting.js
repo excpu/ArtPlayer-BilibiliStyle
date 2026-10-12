@@ -251,29 +251,19 @@ export default class Setting {
   get SPEED() {
     return {
       min: 0,
-      max: 4,
+      max: 2,
       steps: [
         {
-          name: '极慢',
-          value: 10,
+          name: '慢速',
+          value: 'slow',
         },
         {
-          name: '较慢',
-          value: 7.5,
-          hide: true,
+          name: '正常',
+          value: 'normal',
         },
         {
-          name: '适中',
-          value: 5,
-        },
-        {
-          name: '较快',
-          value: 2.5,
-          hide: true,
-        },
-        {
-          name: '极快',
-          value: 1,
+          name: '快速',
+          value: 'fast',
         },
       ],
       ...this.option.SPEED,

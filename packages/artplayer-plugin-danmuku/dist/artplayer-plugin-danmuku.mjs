@@ -80,7 +80,7 @@ function bilibiliDanmuParseFromUrl(url) {
     }
   });
 }
-const jsContent = '/*!\n * artplayer-plugin-danmuku.js v5.3.0\n * Github: https://github.com/zhw2590582/ArtPlayer\n * (c) 2017-2026 Harvey Zhao\n * Released under the MIT License.\n */\nfunction getDanmuTop({ target, visibles, clientWidth, clientHeight, marginBottom, marginTop, antiOverlap }) {\n  const maxTop = clientHeight - marginBottom;\n  const danmus = visibles.filter((item) => item.mode === target.mode && item.top <= maxTop).sort((prev, next) => prev.top - next.top);\n  if (danmus.length === 0) {\n    if (target.mode === 2) {\n      return maxTop - target.height;\n    } else {\n      return marginTop;\n    }\n  }\n  danmus.unshift({\n    type: "top",\n    top: 0,\n    left: 0,\n    right: 0,\n    height: marginTop,\n    width: clientWidth,\n    speed: 0,\n    distance: clientWidth\n  });\n  danmus.push({\n    type: "bottom",\n    top: maxTop,\n    left: 0,\n    right: 0,\n    height: marginBottom,\n    width: clientWidth,\n    speed: 0,\n    distance: clientWidth\n  });\n  if (target.mode === 2) {\n    for (let index = danmus.length - 2; index >= 0; index -= 1) {\n      const item = danmus[index];\n      const prev = danmus[index + 1];\n      const itemBottom = item.top + item.height;\n      const diff = prev.top - itemBottom;\n      if (diff >= target.height) {\n        return prev.top - target.height;\n      }\n    }\n  } else {\n    for (let index = 1; index < danmus.length; index += 1) {\n      const item = danmus[index];\n      const prev = danmus[index - 1];\n      const prevBottom = prev.top + prev.height;\n      const diff = item.top - prevBottom;\n      if (diff >= target.height) {\n        return prevBottom;\n      }\n    }\n  }\n  const topMap = [];\n  for (let index = 1; index < danmus.length - 1; index += 1) {\n    const item = danmus[index];\n    if (topMap.length) {\n      const last = topMap[topMap.length - 1];\n      if (last[0].top === item.top) {\n        last.push(item);\n      } else {\n        topMap.push([item]);\n      }\n    } else {\n      topMap.push([item]);\n    }\n  }\n  if (antiOverlap) {\n    switch (target.mode) {\n      case 0: {\n        const result = topMap.find((list) => {\n          return list.every((danmu) => {\n            if (clientWidth < danmu.distance)\n              return false;\n            if (target.speed < danmu.speed)\n              return true;\n            const overlapTime = danmu.right / (target.speed - danmu.speed);\n            if (overlapTime > danmu.time)\n              return true;\n            return false;\n          });\n        });\n        return result && result[0] ? result[0].top : void 0;\n      }\n      // 静止弹幕没有重叠问题\n      case 1:\n      case 2:\n        return void 0;\n    }\n  } else {\n    switch (target.mode) {\n      case 0:\n        topMap.sort((prev, next) => {\n          const nextMinRight = Math.min(...next.map((item) => item.right));\n          const prevMinRight = Math.min(...prev.map((item) => item.right));\n          return nextMinRight * next.length - prevMinRight * prev.length;\n        });\n        break;\n      case 1:\n      case 2:\n        topMap.sort((prev, next) => {\n          const nextMaxWidth = Math.max(...next.map((item) => item.width));\n          const prevMaxWidth = Math.max(...prev.map((item) => item.width));\n          return prevMaxWidth * prev.length - nextMaxWidth * next.length;\n        });\n        break;\n    }\n    return topMap[0][0].top;\n  }\n}\nonmessage = (event) => {\n  const { data } = event;\n  if (!data.id || !data.type)\n    return;\n  const fns = { getDanmuTop };\n  const fn = fns[data.type];\n  const result = fn(data);\n  globalThis.postMessage({\n    result,\n    id: data.id\n  });\n};\n';
+const jsContent = '/*!\n * artplayer-plugin-danmuku.js v5.3.0\n * Github: https://github.com/zhw2590582/ArtPlayer\n * (c) 2017-2026 Harvey Zhao\n * Released under the MIT License.\n */\nfunction getDanmuTop({ target, visibles, clientWidth, clientHeight, marginBottom, marginTop, antiOverlap }) {\n  const maxTop = clientHeight - marginBottom;\n  const danmus = visibles.filter((item) => item.mode === target.mode && item.top <= maxTop).sort((prev, next) => prev.top - next.top);\n  if (danmus.length === 0) {\n    if (target.mode === 2) {\n      return maxTop - target.height;\n    } else {\n      return marginTop;\n    }\n  }\n  if (antiOverlap && target.mode === 0) {\n    const candidates = [.../* @__PURE__ */ new Set([\n      marginTop,\n      ...danmus.map((danmu) => danmu.top + danmu.height)\n    ])].sort((prev, next) => prev - next);\n    for (const top of candidates) {\n      if (top < marginTop || top + target.height > maxTop)\n        continue;\n      const hasCollision = danmus.some((danmu) => {\n        const overlapsVertically = top < danmu.top + danmu.height && top + target.height > danmu.top;\n        if (!overlapsVertically)\n          return false;\n        const gap = Math.max(target.height * 2, clientWidth * 0.05);\n        if (danmu.right < gap)\n          return true;\n        if (target.speed <= danmu.speed)\n          return false;\n        const overlapTime = (danmu.right - gap) / (target.speed - danmu.speed);\n        return overlapTime <= danmu.time;\n      });\n      if (!hasCollision)\n        return top;\n    }\n    return void 0;\n  }\n  danmus.unshift({\n    type: "top",\n    top: 0,\n    left: 0,\n    right: 0,\n    height: marginTop,\n    width: clientWidth,\n    speed: 0,\n    distance: clientWidth\n  });\n  danmus.push({\n    type: "bottom",\n    top: maxTop,\n    left: 0,\n    right: 0,\n    height: marginBottom,\n    width: clientWidth,\n    speed: 0,\n    distance: clientWidth\n  });\n  if (target.mode === 2) {\n    for (let index = danmus.length - 2; index >= 0; index -= 1) {\n      const item = danmus[index];\n      const prev = danmus[index + 1];\n      const itemBottom = item.top + item.height;\n      const diff = prev.top - itemBottom;\n      if (diff >= target.height) {\n        return prev.top - target.height;\n      }\n    }\n  } else {\n    for (let index = 1; index < danmus.length; index += 1) {\n      const item = danmus[index];\n      const prev = danmus[index - 1];\n      const prevBottom = prev.top + prev.height;\n      const diff = item.top - prevBottom;\n      if (diff >= target.height) {\n        return prevBottom;\n      }\n    }\n  }\n  const topMap = [];\n  for (let index = 1; index < danmus.length - 1; index += 1) {\n    const item = danmus[index];\n    if (topMap.length) {\n      const last = topMap[topMap.length - 1];\n      if (last[0].top === item.top) {\n        last.push(item);\n      } else {\n        topMap.push([item]);\n      }\n    } else {\n      topMap.push([item]);\n    }\n  }\n  if (antiOverlap) {\n    switch (target.mode) {\n      // 静止弹幕没有重叠问题\n      case 1:\n      case 2:\n        return void 0;\n    }\n  } else {\n    switch (target.mode) {\n      case 0:\n        topMap.sort((prev, next) => {\n          const nextMinRight = Math.min(...next.map((item) => item.right));\n          const prevMinRight = Math.min(...prev.map((item) => item.right));\n          return nextMinRight * next.length - prevMinRight * prev.length;\n        });\n        break;\n      case 1:\n      case 2:\n        topMap.sort((prev, next) => {\n          const nextMaxWidth = Math.max(...next.map((item) => item.width));\n          const prevMaxWidth = Math.max(...prev.map((item) => item.width));\n          return prevMaxWidth * prev.length - nextMaxWidth * next.length;\n        });\n        break;\n    }\n    return topMap[0][0].top;\n  }\n}\nonmessage = (event) => {\n  const { data } = event;\n  if (!data.id || !data.type)\n    return;\n  const fns = { getDanmuTop };\n  const fn = fns[data.type];\n  const result = fn(data);\n  globalThis.postMessage({\n    result,\n    id: data.id\n  });\n};\n';
 const blob = typeof self !== "undefined" && self.Blob && new Blob(["URL.revokeObjectURL(import.meta.url);", jsContent], { type: "text/javascript;charset=utf-8" });
 function WorkerWrapper(options) {
   let objURL;
@@ -105,6 +105,14 @@ function WorkerWrapper(options) {
     );
   }
 }
+const DANMU_SPEED = {
+  fast: 0.7,
+  normal: 1,
+  slow: 1.4
+};
+const DURATION_MIN = { width: 640, seconds: 7 };
+const DURATION_MAX = { width: 1920, seconds: 13 };
+const SPEED_LIMIT = { min: 70, max: 165 };
 class Danmuku {
   constructor(art, option) {
     const { constructor, template } = art;
@@ -141,8 +149,8 @@ class Danmuku {
     return {
       danmuku: [],
       // 弹幕数据
-      speed: 5,
-      // 弹幕持续时间，范围在[1 ~ 10]
+      speed: "normal",
+      // 弹幕速度: fast, normal, slow
       margin: [10, "25%"],
       // 弹幕上下边距，支持像素数字和百分比
       opacity: 1,
@@ -199,7 +207,7 @@ class Danmuku {
   static get scheme() {
     return {
       danmuku: "array|function|string",
-      speed: "number",
+      speed: "string",
       margin: "array",
       opacity: "number",
       color: "string",
@@ -338,9 +346,24 @@ class Danmuku {
     });
     return result;
   }
-  // 计算弹幕速度
+  // 按播放器宽度计算速度，保持不同尺寸和分辨率下的相对速度一致
   get speed() {
-    return this.option.synchronousPlayback && this.art.playbackRate ? this.option.speed / Number(this.art.playbackRate) : this.option.speed;
+    const { clamp } = this.utils;
+    const width = Math.max(this.$player.clientWidth, 1);
+    const ratio = clamp(
+      (width - DURATION_MIN.width) / (DURATION_MAX.width - DURATION_MIN.width),
+      0,
+      1
+    );
+    const seconds = DURATION_MIN.seconds + (DURATION_MAX.seconds - DURATION_MIN.seconds) * ratio;
+    const level = DANMU_SPEED[this.option.speed];
+    const speed = clamp(width / (seconds * level), SPEED_LIMIT.min / level, SPEED_LIMIT.max / level);
+    return this.option.synchronousPlayback && this.art.playbackRate ? speed * Number(this.art.playbackRate) : speed;
+  }
+  // 顶部和底部弹幕不滚动，仍按速度档位调整停留时间
+  get duration() {
+    const duration = 5 * DANMU_SPEED[this.option.speed];
+    return this.option.synchronousPlayback && this.art.playbackRate ? duration / Number(this.art.playbackRate) : duration;
   }
   // 加载弹幕
   async load(danmuku) {
@@ -434,7 +457,7 @@ class Danmuku {
   }
   // 动态配置
   config(option, isInit = false) {
-    const { clamp } = this.utils;
+    const { clamp, errorHandle } = this.utils;
     const { $controlsCenter } = this.art.template;
     const changed = Object.keys(option).some(
       (key) => JSON.stringify(this.option[key]) !== JSON.stringify(option[key])
@@ -444,7 +467,10 @@ class Danmuku {
     this.option = Object.assign({}, Danmuku.option, this.option, option);
     this.validator(this.option, Danmuku.scheme);
     this.option.mode = clamp(this.option.mode, 0, 2);
-    this.option.speed = clamp(this.option.speed, 1, 10);
+    errorHandle(
+      Object.prototype.hasOwnProperty.call(DANMU_SPEED, this.option.speed),
+      'Danmuku speed must be "fast", "normal", or "slow"'
+    );
     this.option.opacity = clamp(this.option.opacity, 0, 1);
     this.option.lockTime = clamp(this.option.lockTime, 1, 60);
     this.option.maxLength = clamp(this.option.maxLength, 1, 1e3);
@@ -537,14 +563,14 @@ class Danmuku {
             danmu.$ref.style.backgroundColor = danmu.border ? "rgb(0 0 0 / 50%)" : null;
             setStyles(danmu.$ref, danmu.style);
             danmu.$lastStartTime = Date.now();
-            danmu.$restTime = this.speed;
             const distance = clientWidth + danmu.$ref.clientWidth;
+            danmu.$restTime = danmu.mode === 0 ? distance / this.speed : this.duration;
             const { result: top } = await this.postMessage({
               type: "getDanmuTop",
               target: {
                 mode: danmu.mode,
                 height: danmu.$ref.clientHeight,
-                speed: distance / danmu.$restTime
+                speed: this.speed
               },
               // 当前弹幕信息
               visibles: this.visibles,
@@ -596,60 +622,51 @@ class Danmuku {
   }
   // 重置正在显示的弹幕: stop/emit 状态的弹幕
   resize() {
-    const { clientWidth } = this.$player;
     this.filter("stop", (danmu) => {
-      switch (danmu.mode) {
-        // 滚动的弹幕
-        case 0:
-          danmu.$ref.style.left = `${clientWidth}px`;
-          break;
+      if (danmu.mode === 0) {
+        this.freeze(danmu);
       }
     });
     this.filter("emit", (danmu) => {
       danmu.$lastStartTime = Date.now();
-      switch (danmu.mode) {
-        // 滚动的弹幕
-        case 0: {
-          const distance = clientWidth + danmu.$ref.clientWidth;
-          danmu.$ref.style.left = `${clientWidth}px`;
-          danmu.$ref.style.transform = `translateX(${-distance}px)`;
-          danmu.$ref.style.transition = `transform ${danmu.$restTime}s linear 0s`;
-          break;
-        }
+      if (danmu.mode === 0) {
+        this.freeze(danmu);
+        this.roll(danmu);
       }
     });
   }
+  // 把滚动弹幕固定在当前的视觉位置
+  freeze(danmu) {
+    const left = this.getLeft(danmu.$ref) - this.getLeft(this.$player);
+    danmu.$ref.style.transition = "transform 0s linear 0s";
+    danmu.$ref.style.transform = "translateX(0px)";
+    danmu.$ref.style.left = `${left}px`;
+  }
+  // 从当前位置按当前速度滚出屏幕
+  roll(danmu) {
+    const distance = Number.parseFloat(danmu.$ref.style.left) + danmu.$ref.clientWidth;
+    danmu.$restTime = Math.max(distance / this.speed, 0.01);
+    void danmu.$ref.offsetWidth;
+    danmu.$ref.style.transform = `translateX(${-distance}px)`;
+    danmu.$ref.style.transition = `transform ${danmu.$restTime}s linear 0s`;
+  }
   // 继续弹幕
   continue() {
-    const { clientWidth } = this.$player;
     this.filter("stop", (danmu) => {
       this.setState(danmu, "emit");
       danmu.$lastStartTime = Date.now();
-      switch (danmu.mode) {
-        // 继续滚动的弹幕
-        case 0: {
-          const distance = clientWidth + danmu.$ref.clientWidth;
-          danmu.$ref.style.transform = `translateX(${-distance}px)`;
-          danmu.$ref.style.transition = `transform ${danmu.$restTime}s linear 0s`;
-          break;
-        }
+      if (danmu.mode === 0) {
+        this.roll(danmu);
       }
     });
     return this;
   }
   // 暂停弹幕
   suspend() {
-    const { clientWidth } = this.$player;
     this.filter("emit", (danmu) => {
       this.setState(danmu, "stop");
-      switch (danmu.mode) {
-        // 停止滚动的弹幕
-        case 0: {
-          const translateX = clientWidth - (this.getLeft(danmu.$ref) - this.getLeft(this.$player));
-          danmu.$ref.style.transform = `translateX(${-translateX}px)`;
-          danmu.$ref.style.transition = "transform 0s linear 0s";
-          break;
-        }
+      if (danmu.mode === 0) {
+        this.freeze(danmu);
       }
     });
     return this;
@@ -1093,29 +1110,19 @@ class Setting {
   get SPEED() {
     return {
       min: 0,
-      max: 4,
+      max: 2,
       steps: [
         {
-          name: "极慢",
-          value: 10
+          name: "慢速",
+          value: "slow"
         },
         {
-          name: "较慢",
-          value: 7.5,
-          hide: true
+          name: "正常",
+          value: "normal"
         },
         {
-          name: "适中",
-          value: 5
-        },
-        {
-          name: "较快",
-          value: 2.5,
-          hide: true
-        },
-        {
-          name: "极快",
-          value: 1
+          name: "快速",
+          value: "fast"
         }
       ],
       ...this.option.SPEED
